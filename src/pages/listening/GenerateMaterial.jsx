@@ -61,7 +61,7 @@ export default function GenerateMaterial() {
       setEditedMaterial(data)
       setStep('preview')
     } catch (e) {
-      setError(e.message || 'Failed to generate material. Check your Anthropic API key in Netlify env vars.')
+      setError(e.message || 'Failed to generate material. Check your GEMINI_API_KEY in Netlify env vars.')
       setStep('form')
     }
   }
@@ -256,7 +256,7 @@ export default function GenerateMaterial() {
       {error && (
         <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-lg border border-red-100">
           <strong>Error:</strong> {error}
-          <p className="mt-1 text-xs">Make sure <code>ANTHROPIC_API_KEY</code> is set in your Netlify environment variables.</p>
+          <p className="mt-1 text-xs">Make sure <code>GEMINI_API_KEY</code> is set in your Netlify environment variables.</p>
         </div>
       )}
 
@@ -344,7 +344,7 @@ export default function GenerateMaterial() {
             🤖 Generate Material
           </button>
           <p className="text-center text-xs text-slate-400 mt-2">
-            Powered by Google Gemini 2.0 Flash · Takes ~10–20 seconds
+            Powered by Google Gemini 1.5 Flash · Takes ~10–20 seconds
           </p>
         </div>
       </div>
