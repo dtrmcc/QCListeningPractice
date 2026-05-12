@@ -1,4 +1,3 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const FIELD_LABELS = {
   arts_humanities: 'Arts & Humanities',
@@ -132,18 +131,31 @@ export const handler = async (event) => {
   })
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.9,
-        maxOutputTokens: 4096,
-      },
+    const GEMINI_MODEL = 'gemini-1.5-flash'
+    const url = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.9,
+          maxOutputTokens: 4096,
+        },
+      }),
     })
 
-    const result = await model.generateContent(prompt)
-    const text = result.response.text()
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}))
+      throw new Error(errData?.error?.message || `Gemini API error ${res.status}`)
+    }
+
+    const data = await res.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!text) throw new Error('Empty response from Gemini')
+
     const parsed = JSON.parse(text)
 
     return {
