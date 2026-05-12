@@ -130,45 +130,79 @@ export const handler = async (event) => {
     topic, difficulty, num_questions, extra_instructions,
   })
 
-  try {
-    const GEMINI_MODEL = 'gemini-1.5-flash'
-    const url = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`
+  // Try models in order until one works — different accounts have different availability
+  const CANDIDATE_MODELS = [
+    'gemini-1.5-flash-latest',
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-001',
+    'gemini-1.5-pro-latest',
+    'gemini-1.0-pro',
+  ]
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.9,
-          maxOutputTokens: 4096,
-        },
-      }),
-    })
+  let lastError = null
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}))
-      throw new Error(errData?.error?.message || `Gemini API error ${res.status}`)
+  for (const model of CANDIDATE_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.9,
+            maxOutputTokens: 4096,
+          },
+        }),
+      })
+
+      // 404 means this model isn't available — try the next one
+      if (res.status === 404) {
+        const errData = await res.json().catch(() => ({}))
+        lastError = errData?.error?.message || `Model ${model} not found`
+        console.warn(`Model ${model} unavailable, trying next...`)
+        continue
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData?.error?.message || `Gemini API error ${res.status}`)
+      }
+
+      const data = await res.json()
+      const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!raw) throw new Error(`Empty response from model ${model}`)
+
+      // Strip markdown code fences if present
+      const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
+      const parsed = JSON.parse(text)
+
+      console.log(`Generated successfully with model: ${model}`)
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+      }
+    } catch (err) {
+      // Re-throw non-404 errors immediately (auth, quota, parse errors)
+      if (!err.message?.includes('not found') && !err.message?.includes('404')) {
+        console.error(`Fatal error with model ${model}:`, err)
+        return {
+          statusCode: 500,
+          body: JSON.stringify({ error: err.message || 'AI generation failed' }),
+        }
+      }
+      lastError = err.message
     }
+  }
 
-    const data = await res.json()
-    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!raw) throw new Error('Empty response from Gemini')
-
-    // Strip markdown code fences if the model wraps the JSON
-    const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
-    const parsed = JSON.parse(text)
-
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(parsed),
-    }
-  } catch (err) {
-    console.error('Gemini generation error:', err)
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: err.message || 'AI generation failed' }),
-    }
+  // All models exhausted
+  console.error('All Gemini models unavailable:', lastError)
+  return {
+    statusCode: 500,
+    body: JSON.stringify({
+      error: `No available Gemini model found for this API key. Last error: ${lastError}`,
+    }),
   }
 }
