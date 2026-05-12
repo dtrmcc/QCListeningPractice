@@ -140,7 +140,6 @@ export const handler = async (event) => {
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: {
-          responseMimeType: 'application/json',
           temperature: 0.9,
           maxOutputTokens: 4096,
         },
@@ -153,9 +152,11 @@ export const handler = async (event) => {
     }
 
     const data = await res.json()
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-    if (!text) throw new Error('Empty response from Gemini')
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
+    if (!raw) throw new Error('Empty response from Gemini')
 
+    // Strip markdown code fences if the model wraps the JSON
+    const text = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
     const parsed = JSON.parse(text)
 
     return {
