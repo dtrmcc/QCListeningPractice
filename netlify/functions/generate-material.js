@@ -132,11 +132,11 @@ export const handler = async (event) => {
 
   // Try models in order until one works — different accounts have different availability
   const CANDIDATE_MODELS = [
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-001',
+    'gemini-2.0-flash-exp',
     'gemini-1.5-flash-latest',
     'gemini-1.5-flash',
-    'gemini-1.5-flash-001',
-    'gemini-1.5-pro-latest',
-    'gemini-1.0-pro',
   ]
 
   let lastError = null

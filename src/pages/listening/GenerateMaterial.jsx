@@ -344,7 +344,7 @@ export default function GenerateMaterial() {
             🤖 Generate Material
           </button>
           <p className="text-center text-xs text-slate-400 mt-2">
-            Powered by Google Gemini 1.5 Flash · Takes ~10–20 seconds
+            Powered by Google Gemini 2.0 Flash · Takes ~10–20 seconds
           </p>
         </div>
       </div>
