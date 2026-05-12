@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const FIELD_LABELS = {
   arts_humanities: 'Arts & Humanities',
@@ -20,69 +20,80 @@ function buildPrompt({ material_type, academic_field, conversation_setting, topi
   const isLecture = material_type === 'lecture'
   const field = FIELD_LABELS[academic_field] || 'General Academic'
   const setting = SETTING_LABELS[conversation_setting] || 'campus setting'
-  const topicNote = topic ? `The specific topic should be: ${topic}` : 'Choose an interesting, specific topic appropriate for TOEFL.'
-  const diffNote = { easy: 'Use straightforward vocabulary and a clear, linear structure.', medium: 'Use moderately complex vocabulary with some academic terms defined in context.', hard: 'Use sophisticated academic vocabulary and complex organizational structure.' }[difficulty] || ''
+  const topicNote = topic
+    ? `The specific topic should be: ${topic}`
+    : 'Choose an interesting, specific TOEFL-appropriate topic.'
+  const diffNote = {
+    easy: 'Use straightforward vocabulary and a clear, linear structure.',
+    medium: 'Use moderately complex vocabulary with some academic terms defined in context.',
+    hard: 'Use sophisticated academic vocabulary and a complex organizational structure with multiple sub-points.',
+  }[difficulty] || ''
 
-  const lecturePrompt = `Create a TOEFL Academic Listening LECTURE in the field of ${field}.
+  const passageInstructions = isLecture
+    ? `Create a TOEFL Academic Listening LECTURE in the field of ${field}.
 ${topicNote}
-The lecture should be ~420-500 words, delivered by a professor, ${difficulty} difficulty.
-${diffNote}
-It may include 1-2 brief student questions/comments (marked with "Student:").
-The professor's delivery should feel natural and spoken, with occasional restarts, hedges (e.g., "well", "so", "you know"), and signposting.`
-
-  const convPrompt = `Create a TOEFL Academic Listening CONVERSATION set in ${setting}.
+Length: ~420–500 words. Delivered by a professor. Difficulty: ${difficulty}. ${diffNote}
+May include 1–2 brief student questions/comments (marked "Student:").
+The professor's speech must feel natural and spoken — include occasional hedges ("well", "so", "now"), signposting phrases ("Let me turn to...", "The key point here is..."), and slight restarts. Use paragraph breaks to separate ideas.`
+    : `Create a TOEFL Academic Listening CONVERSATION set in ${setting}.
 ${topicNote}
-The conversation should be ~200-250 words, between a Student and a staff member/professor, ${difficulty} difficulty.
-Use natural conversational language with back-and-forth exchanges.
-The student has a specific problem or question to resolve.`
+Length: ~200–250 words. Two speakers: Student and a staff member or professor. Difficulty: ${difficulty}. ${diffNote}
+The student has a specific problem or request. The dialogue should feel natural with back-and-forth exchanges. Use paragraph breaks between speaker turns.`
 
-  const qTypes = isLecture
-    ? ['gist_content', 'detail', 'detail', 'organization', 'attitude', 'inference']
-    : ['gist_purpose', 'detail', 'detail', 'attitude', 'inference']
-  const selectedQTypes = qTypes.slice(0, num_questions)
+  // Choose question types proportional to what TOEFL uses
+  const lectureTypes  = ['gist_content', 'detail', 'detail', 'organization', 'attitude', 'inference']
+  const convTypes     = ['gist_purpose', 'detail', 'detail', 'attitude', 'inference']
+  const baseTypes     = isLecture ? lectureTypes : convTypes
+  const selectedTypes = baseTypes.slice(0, num_questions)
 
   const qTypeDefs = `
-- gist_content: "What is mainly discussed?" — tests the main topic
-- gist_purpose: "Why does the student visit?" — tests the main reason
-- detail: Tests a specific fact from the passage (4 options, 1 correct)
-- function: "What does the professor mean when he says: [quote]?" — tests implied meaning
-- attitude: "What is the professor's attitude toward X?" — tests opinion/feeling
-- organization: "Why does the professor mention X?" — tests rhetorical purpose
-- connecting_content: Matching/table question (mark allows_multiple: true, correct_answer as "A,C" etc.)
-- inference: "What can be inferred about X?" — tests logical conclusion`
+- gist_content      → "What is the lecture mainly about?" (main topic)
+- gist_purpose      → "Why does the student visit / why does the professor discuss X?" (main reason)
+- detail            → Tests a specific fact stated in the passage; 4 options, 1 correct
+- function          → "What does the professor mean when he says: [direct quote]?" (implied meaning)
+- attitude          → "What is the professor's attitude toward X?" (opinion/feeling)
+- organization      → "Why does the professor mention X?" (rhetorical purpose / structure)
+- connecting_content→ Matching or table question; set allows_multiple:true and correct_answer to e.g. "A,C"
+- inference         → "What can be inferred about X?" (logical conclusion not stated directly)`
 
-  return `You are a professional TOEFL test designer. ${isLecture ? lecturePrompt : convPrompt}
+  return `You are a professional TOEFL iBT test designer with 10 years of experience.
 
-Create exactly ${num_questions} questions covering these types in order: ${selectedQTypes.join(', ')}.
-${extra_instructions ? `\nExtra instructions: ${extra_instructions}` : ''}
+${passageInstructions}
 
-Question type definitions:${qTypeDefs}
+Generate exactly ${num_questions} questions covering these types in order: ${selectedTypes.join(', ')}.
+${extra_instructions ? `\nExtra instructions from the teacher: ${extra_instructions}` : ''}
 
-CRITICAL: Return ONLY valid JSON, no markdown, no explanation. Use this exact structure:
+Question type reference:${qTypeDefs}
+
+RULES:
+1. All 4 options must be plausible. Wrong options should be tempting — either partially true, too broad/narrow, or based on a misheard detail.
+2. The correct answer must be clearly supported by a specific part of the transcript.
+3. For "function" questions, include an exact short quote from the transcript in the question text.
+4. Transcript must use natural spoken language, NOT written/formal prose.
+
+Return ONLY a valid JSON object with this exact structure (no markdown, no code fences):
 {
-  "title": "Concise descriptive title (e.g., 'Professor discusses bioluminescence in deep-sea creatures')",
-  "subject": "Brief subject/topic label",
-  "speaker_notes": "One sentence about delivery style for TTS (e.g., 'Professor speaks with enthusiasm, pauses after introducing key terms')",
-  "lecture_style": "monologue or interactive",
+  "title": "Descriptive title, e.g. 'Professor discusses bioluminescence in deep-sea creatures'",
+  "subject": "Short topic label, e.g. 'Bioluminescence'",
+  "speaker_notes": "One sentence on delivery style for TTS, e.g. 'Professor is enthusiastic; pause after key terms'",
+  "lecture_style": "monologue | interactive",
   "transcript": "Full transcript with speaker labels (Professor: / Student:) and natural paragraph breaks using \\n\\n",
   "questions": [
     {
-      "question_type": "one of the 8 types above",
-      "question_text": "Full question text as it appears on TOEFL",
+      "question_type": "<one of the 8 types>",
+      "question_text": "Full question text exactly as it would appear on the TOEFL",
       "options": [
-        {"id": "A", "text": "Option A text"},
-        {"id": "B", "text": "Option B text"},
-        {"id": "C", "text": "Option C text"},
-        {"id": "D", "text": "Option D text"}
+        {"id": "A", "text": "..."},
+        {"id": "B", "text": "..."},
+        {"id": "C", "text": "..."},
+        {"id": "D", "text": "..."}
       ],
       "correct_answer": "A",
       "allows_multiple": false,
-      "explanation": "Brief explanation of why this is correct and others are wrong"
+      "explanation": "One sentence: why this is correct and why each distractor is wrong"
     }
   ]
-}
-
-Ensure all 4 options are plausible but only the correct one is clearly supported by the transcript. Distractors should be tempting but incorrect.`
+}`
 }
 
 export const handler = async (event) => {
@@ -90,11 +101,11 @@ export const handler = async (event) => {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method Not Allowed' }) }
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'ANTHROPIC_API_KEY is not configured in Netlify environment variables.' }),
+      body: JSON.stringify({ error: 'GEMINI_API_KEY is not set in Netlify environment variables.' }),
     }
   }
 
@@ -115,20 +126,25 @@ export const handler = async (event) => {
     extra_instructions = '',
   } = params
 
-  const prompt = buildPrompt({ material_type, academic_field, conversation_setting, topic, difficulty, num_questions, extra_instructions })
+  const prompt = buildPrompt({
+    material_type, academic_field, conversation_setting,
+    topic, difficulty, num_questions, extra_instructions,
+  })
 
   try {
-    const client = new Anthropic({ apiKey })
-    const message = await client.messages.create({
-      model: 'claude-opus-4-7',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }],
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.9,
+        maxOutputTokens: 4096,
+      },
     })
 
-    const rawText = message.content[0]?.text || ''
-    // Strip any markdown code fences if present
-    const jsonText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()
-    const parsed = JSON.parse(jsonText)
+    const result = await model.generateContent(prompt)
+    const text = result.response.text()
+    const parsed = JSON.parse(text)
 
     return {
       statusCode: 200,
@@ -136,7 +152,7 @@ export const handler = async (event) => {
       body: JSON.stringify(parsed),
     }
   } catch (err) {
-    console.error('Generation error:', err)
+    console.error('Gemini generation error:', err)
     return {
       statusCode: 500,
       body: JSON.stringify({ error: err.message || 'AI generation failed' }),
